@@ -90,9 +90,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _showDiagnosticViewport = MutableStateFlow(false)
     val showDiagnosticViewport: StateFlow<Boolean> = _showDiagnosticViewport.asStateFlow()
 
-    private val _showGameStage = MutableStateFlow(false)
-    val showGameStage: StateFlow<Boolean> = _showGameStage.asStateFlow()
-
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
@@ -127,23 +124,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setDiagnosticViewportVisible(visible: Boolean) {
         _showDiagnosticViewport.value = visible
-    }
-
-    fun setGameStageVisible(visible: Boolean) {
-        _showGameStage.value = visible
-    }
-
-    fun handleVirtualKeyPress(keyCode: Int, isDown: Boolean) {
-        val label = HardwareAndControllerMonitor.formatKeyLabel(keyCode, controllerProfile.value.layoutPreset)
-        _liveGamepadState.update { state ->
-            val updated = if (isDown) state.pressedKeyCodes + keyCode else state.pressedKeyCodes - keyCode
-            state.copy(
-                pressedKeyCodes = updated,
-                lastKeyCode = if (isDown) keyCode else state.lastKeyCode,
-                lastKeyLabel = if (isDown) label else state.lastKeyLabel,
-                lastDeviceName = "Virtual Gamepad Overlay"
-            )
-        }
     }
 
     // --- Game Folder SAF ---
@@ -415,11 +395,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Recompile & Verification Pipeline ---
 
-    fun runRecompileAndLaunch() {
-        runRecompilePipeline(autoLaunchOnComplete = true)
-    }
-
-    fun runRecompilePipeline(autoLaunchOnComplete: Boolean = false) {
+    fun runRecompilePipeline() {
         if (_recompileState.value.isRunning) return
 
         viewModelScope.launch {
@@ -597,23 +573,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 overallProgress = 1f,
                 steps = baseSteps.toList(),
                 logLines = logs.toList(),
-                lastCompletedLabel = "Verifikasi selesai pada ${timeFmt.format(Date())}",
+                lastCompletedLabel = "Verifikasi & sinkronisasi selesai pada ${timeFmt.format(Date())}",
                 localBundlePath = localBundlePath,
                 syncedToGameFolder = syncedFolder
             )
-
-            if (autoLaunchOnComplete) {
-                launchGameAfterRecompile()
-            }
         }
-    }
-
-    fun launchGameAfterRecompile() {
-        if (!_recompileState.value.hasRunOnce) {
-            runRecompilePipeline(autoLaunchOnComplete = true)
-            return
-        }
-        _showGameStage.value = true
     }
 
     fun exportAllConfigsToGameFolder() {
@@ -651,7 +615,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun launchExternalContainer(): Boolean {
-        val pkg = _hardwareProfile.value.installedRuntimePackage ?: return false
+        val pkg = _hardwareProfile.value.installedRuntimePackage
+        if (pkg == null) {
+            _snackbarMessage.value = "Container Windows/Wine (mis. Winlator) belum terpasang di perangkat."
+            return false
+        }
         val app = getApplication<Application>()
         val launchIntent = app.packageManager.getLaunchIntentForPackage(pkg) ?: return false
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

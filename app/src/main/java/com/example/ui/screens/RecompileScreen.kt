@@ -74,8 +74,6 @@ fun RecompileScreen(
     gameDirectoryStatus: GameDirectoryStatus,
     hardwareProfile: DeviceHardwareProfile,
     onRunRecompile: () -> Unit,
-    onRunRecompileAndLaunch: () -> Unit,
-    onLaunchGame: () -> Unit,
     onPickGameFolder: () -> Unit,
     onExportAllToFolder: () -> Unit,
     onExportSingleConfigIni: () -> Unit,
@@ -174,41 +172,6 @@ fun RecompileScreen(
                             Icon(Icons.Filled.Build, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(stringResource(id = R.string.action_run_recompile))
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (recompileState.canLaunchGame) {
-                        Button(
-                            onClick = onLaunchGame,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("launch_game_after_recompile_button"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = ShinobiEmerald,
-                                contentColor = ObsidianBg
-                            )
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Jalankan Game Sekarang", style = MaterialTheme.typography.labelLarge)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = onRunRecompileAndLaunch,
-                            enabled = !recompileState.isRunning,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("recompile_and_launch_button"),
-                            border = BorderStroke(1.dp, ShinobiEmerald.copy(alpha = 0.7f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ShinobiEmerald)
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Recompile & Langsung Jalankan")
                         }
                     }
                 }
@@ -362,7 +325,8 @@ fun RecompileScreen(
                             onClick = onLaunchExternalContainer,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
+                                .height(48.dp)
+                                .testTag("launch_external_container_button"),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = ShinobiEmerald,
                                 contentColor = ObsidianBg
@@ -370,8 +334,15 @@ fun RecompileScreen(
                         ) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Luncurkan di ${hardwareProfile.installedRuntimePackage}")
+                            Text("Jalankan di ${hardwareProfile.installedRuntimePackage}")
                         }
+                    } else {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Catatan: Untuk mengeksekusi biner Windows NSUNSR.exe secara nyata di Android, pasang container Box64/Wine (seperti Winlator) lalu jalankan berkas launch_nsunsr.bat beserta config.ini dan dxvk.conf yang telah diekspor.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
                     }
                 }
 

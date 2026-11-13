@@ -88,7 +88,6 @@ fun HomeScreen(
     onRescanFolder: () -> Unit,
     onNavigateTab: (LauncherTab) -> Unit,
     onRunRecompile: () -> Unit,
-    onLaunchGame: () -> Unit,
     onOpenDiagnostic: () -> Unit,
     onLaunchExternalContainer: () -> Unit,
     modifier: Modifier = Modifier
@@ -114,7 +113,6 @@ fun HomeScreen(
                         onRunRecompile()
                         onNavigateTab(LauncherTab.RECOMPILE)
                     },
-                    onLaunchGame = onLaunchGame,
                     onOpenDiagnostic = onOpenDiagnostic,
                     onLaunchExternalContainer = onLaunchExternalContainer
                 )
@@ -172,7 +170,6 @@ private fun HeroGameCard(
     installedContainer: String?,
     onPickGameFolder: () -> Unit,
     onRunRecompile: () -> Unit,
-    onLaunchGame: () -> Unit,
     onOpenDiagnostic: () -> Unit,
     onLaunchExternalContainer: () -> Unit
 ) {
@@ -245,30 +242,6 @@ private fun HeroGameCard(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (recompileState.canLaunchGame) {
-                    Button(
-                        onClick = onLaunchGame,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("home_launch_game_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ShinobiEmerald,
-                            contentColor = ObsidianBg
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Jalankan Game (Siap Main)",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
