@@ -2,10 +2,6 @@ name: Build StormRev Launcher APK
 
 on:
   push:
-    branches:
-      - '**'
-    tags:
-      - 'v*'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -33,25 +29,75 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Android SDK (API 36.1)
-        uses: android-actions/setup-android@v4
-        with:
-          packages: |
-            platform-tools
-            build-tools;36.0.0
-            platforms;android-36
-            platforms;android-36.1
-
-      - name: Accept Android SDK Licenses
+      - name: Set up Android SDK & API 36.1
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/"*/bin/sdkmanager \
+            "$(command -v sdkmanager 2>/dev/null || true)"; do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Downloading Android cmdline-tools..."
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdline-tools.zip
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-extract
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv /tmp/cmdline-extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-extract
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install "cmdline-tools;latest" >/dev/null 2>&1 || true
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
+            "platform-tools" \
+            "build-tools;36.0.0" \
+            "build-tools;36.1.0" \
+            "platforms;android-36" \
+            "platforms;android-36.1"
+
+          ls -la "$SDK_ROOT/platforms" "$SDK_ROOT/build-tools"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
+      - name: Verify Gradle binary (fallback download if needed)
+        shell: bash
+        run: |
+          if ! command -v gradle >/dev/null 2>&1; then
+            echo "Installing Gradle 9.3.1 directly..."
+            curl -fsSL "https://services.gradle.org/distributions/gradle-9.3.1-bin.zip" -o /tmp/gradle.zip
+            mkdir -p /tmp/gradle-dist
+            unzip -q /tmp/gradle.zip -d /tmp/gradle-dist
+            rm -f /tmp/gradle.zip
+            echo "/tmp/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+            export PATH="/tmp/gradle-dist/gradle-9.3.1/bin:$PATH"
+          fi
+          gradle --version
+
       - name: Prepare debug keystore and env config
+        shell: bash
         run: |
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
             base64 -d debug.keystore.base64 > debug.keystore || rm -f debug.keystore
@@ -72,11 +118,14 @@ jobs:
           fi
 
       - name: Build Debug APK
+        shell: bash
         run: |
           gradle :app:assembleDebug \
             --no-daemon \
+            --no-configuration-cache \
             --max-workers=2 \
             -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          ls -lh app/build/outputs/apk/debug/
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -105,11 +154,13 @@ jobs:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
         run: |
           echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "${{ github.workspace }}/my-upload-key.jks"
           export KEYSTORE_PATH="${{ github.workspace }}/my-upload-key.jks"
           gradle :app:assembleRelease \
             --no-daemon \
+            --no-configuration-cache \
             --max-workers=2 \
             -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
@@ -122,11 +173,74 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  unit-tests:
+    name: Run Unit & Robolectric Tests
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK & API 36.1
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/"*/bin/sdkmanager \
+            "$(command -v sdkmanager 2>/dev/null || true)"; do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
+            "platform-tools" \
+            "build-tools;36.0.0" \
+            "build-tools;36.1.0" \
+            "platforms;android-36" \
+            "platforms;android-36.1"
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Verify Gradle binary (fallback download if needed)
+        shell: bash
+        run: |
+          if ! command -v gradle >/dev/null 2>&1; then
+            curl -fsSL "https://services.gradle.org/distributions/gradle-9.3.1-bin.zip" -o /tmp/gradle.zip
+            mkdir -p /tmp/gradle-dist
+            unzip -q /tmp/gradle.zip -d /tmp/gradle-dist
+            rm -f /tmp/gradle.zip
+            echo "/tmp/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Prepare env config
+        shell: bash
+        run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+
       - name: Run Unit & Robolectric Tests
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+        shell: bash
         run: |
           gradle :app:testDebugUnitTest \
             --no-daemon \
+            --no-configuration-cache \
             --max-workers=2 \
             -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
@@ -158,4 +272,4 @@ jobs:
           files: |
             release-assets/debug/*.apk
             release-assets/release/*.apk
-          fail_on_unmatched_files: false
+          fail_on_unmatched-files: false
