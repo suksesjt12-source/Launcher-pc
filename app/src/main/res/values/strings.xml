@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">StormRev Launcher</string>
+    <string name="nav_home">Beranda</string>
+    <string name="nav_graphics">Grafis</string>
+    <string name="nav_controller">Kontroler</string>
+    <string name="nav_recompile">Recompile</string>
+    <string name="game_full_title">Naruto Shippuden: Ultimate Ninja Storm Revolution</string>
+    <string name="game_short_subtitle">PC-to-Android Recompile Bridge • ARM64 / Vulkan</string>
+    <string name="action_select_folder">Pilih Folder Game PC</string>
+    <string name="action_rescan_folder">Pindai Ulang Folder</string>
+    <string name="action_run_recompile">Jalankan Recompile &amp; Verifikasi</string>
+    <string name="action_export_config">Ekspor config.ini</string>
+    <string name="action_test_diagnostics">Uji Frame &amp; Kontroler</string>
+    <string name="action_launch_container">Buka Runtime Eksternal</string>
+    <string name="controller_none_connected">Belum ada pengontrol eksternal terdeteksi. Hubungkan gamepad Bluetooth atau USB-C OTG.</string>
+    <string name="controller_test_rumble">Uji Getar</string>
+    <string name="controller_remap_hint">Ketuk tombol aksi di bawah lalu tekan tombol pada pengontrol eksternal Anda.</string>
+    <string name="graphics_preset_label">Profil Performa</string>
+    <string name="graphics_backend_label">Backend Render</string>
+    <string name="graphics_ini_preview_title">Pratinjau config.ini &amp; dxvk.conf</string>
+</resources>
