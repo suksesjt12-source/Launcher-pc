@@ -58,4 +58,13 @@ class ExampleRobolectricTest {
         assertTrue(json.contains("\"deadzone\": 0.15"))
         assertTrue(json.contains("\"SUBSTITUTION\": ${KeyEvent.KEYCODE_BUTTON_L1}"))
     }
+
+    @Test
+    fun `graphics config generates launch_nsunsr bat script`() {
+        val config = GraphicsConfig.fromPreset(GraphicsPreset.MAX_PERFORMANCE)
+        val bat = config.toLaunchBatString()
+        assertTrue(bat.contains("set DXVK_ASYNC=1"))
+        assertTrue(bat.contains("set DXVK_FRAME_RATE=60"))
+        assertTrue(bat.contains("NSUNSR.exe"))
+    }
 }

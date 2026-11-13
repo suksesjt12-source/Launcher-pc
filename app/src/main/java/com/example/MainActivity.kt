@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.LauncherTab
 import com.example.ui.LauncherViewModel
 import com.example.ui.components.DiagnosticViewportDialog
+import com.example.ui.components.GameRuntimeStageDialog
 import com.example.ui.components.StatusPill
 import com.example.ui.screens.ControllerScreen
 import com.example.ui.screens.GraphicsScreen
@@ -128,6 +129,7 @@ fun StormRevApp(viewModel: LauncherViewModel) {
     val awaitingRemapAction by viewModel.awaitingRemapAction.collectAsStateWithLifecycle()
     val recompileState by viewModel.recompileState.collectAsStateWithLifecycle()
     val showDiagnostic by viewModel.showDiagnosticViewport.collectAsStateWithLifecycle()
+    val showGameStage by viewModel.showGameStage.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -169,6 +171,23 @@ fun StormRevApp(viewModel: LauncherViewModel) {
             layoutPreset = controllerProfile.layoutPreset,
             deadzonePercent = controllerProfile.deadzonePercent,
             onDismiss = { viewModel.setDiagnosticViewportVisible(false) }
+        )
+    }
+
+    if (showGameStage) {
+        GameRuntimeStageDialog(
+            graphicsConfig = graphicsConfig,
+            controllerProfile = controllerProfile,
+            connectedGamepads = connectedGamepads,
+            liveState = liveGamepadState,
+            hardwareProfile = hardwareProfile,
+            gameDirectoryStatus = gameDirectoryStatus,
+            recompileState = recompileState,
+            onVirtualKeyPress = { keyCode, isDown -> viewModel.handleVirtualKeyPress(keyCode, isDown) },
+            onPickGameFolder = { folderPickerLauncher.launch(null) },
+            onExportBundleToFolder = { viewModel.exportAllConfigsToGameFolder() },
+            onLaunchExternalContainer = { viewModel.launchExternalContainer() },
+            onDismiss = { viewModel.setGameStageVisible(false) }
         )
     }
 
@@ -300,6 +319,7 @@ fun StormRevApp(viewModel: LauncherViewModel) {
                                 onRescanFolder = { viewModel.rescanCurrentFolder() },
                                 onNavigateTab = { viewModel.selectTab(it) },
                                 onRunRecompile = { viewModel.runRecompilePipeline() },
+                                onLaunchGame = { viewModel.launchGameAfterRecompile() },
                                 onOpenDiagnostic = { viewModel.setDiagnosticViewportVisible(true) },
                                 onLaunchExternalContainer = { viewModel.launchExternalContainer() }
                             )
@@ -344,6 +364,8 @@ fun StormRevApp(viewModel: LauncherViewModel) {
                                 gameDirectoryStatus = gameDirectoryStatus,
                                 hardwareProfile = hardwareProfile,
                                 onRunRecompile = { viewModel.runRecompilePipeline() },
+                                onRunRecompileAndLaunch = { viewModel.runRecompileAndLaunch() },
+                                onLaunchGame = { viewModel.launchGameAfterRecompile() },
                                 onPickGameFolder = { folderPickerLauncher.launch(null) },
                                 onExportAllToFolder = { viewModel.exportAllConfigsToGameFolder() },
                                 onExportSingleConfigIni = { createConfigIniLauncher.launch("config.ini") },

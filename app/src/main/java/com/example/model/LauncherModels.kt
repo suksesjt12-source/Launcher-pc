@@ -136,6 +136,20 @@ data class GraphicsConfig(
         }
     }
 
+    fun toLaunchBatString(): String {
+        val maxFps = if (fpsTarget == FpsTarget.UNCAPPED) 0 else fpsTarget.fps
+        return buildString {
+            appendLine("@echo off")
+            appendLine("title Naruto Shippuden: UNS Revolution - StormRev Bridge")
+            appendLine("set DXVK_CONFIG_FILE=dxvk.conf")
+            appendLine("set DXVK_ASYNC=${if (asyncShaderCompile) "1" else "0"}")
+            appendLine("set DXVK_FRAME_RATE=$maxFps")
+            appendLine("set WINEESYNC=1")
+            appendLine("set WINEFSYNC=1")
+            appendLine("start \"\" \"NSUNSR.exe\"")
+        }
+    }
+
     companion object {
         fun fromPreset(preset: GraphicsPreset): GraphicsConfig = when (preset) {
             GraphicsPreset.POWER_SAVER -> GraphicsConfig(
@@ -329,8 +343,11 @@ data class RecompilePipelineState(
     val overallProgress: Float = 0f,
     val steps: List<RecompileStepResult> = defaultSteps(),
     val logLines: List<String> = emptyList(),
-    val lastCompletedLabel: String? = null
+    val lastCompletedLabel: String? = null,
+    val localBundlePath: String? = null,
+    val syncedToGameFolder: Boolean = false
 ) {
+    val canLaunchGame: Boolean get() = hasRunOnce && !isRunning
     companion object {
         fun defaultSteps(): List<RecompileStepResult> = listOf(
             RecompileStepResult(

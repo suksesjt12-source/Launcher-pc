@@ -90,6 +90,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _showDiagnosticViewport = MutableStateFlow(false)
     val showDiagnosticViewport: StateFlow<Boolean> = _showDiagnosticViewport.asStateFlow()
 
+    private val _showGameStage = MutableStateFlow(false)
+    val showGameStage: StateFlow<Boolean> = _showGameStage.asStateFlow()
+
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
@@ -124,6 +127,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setDiagnosticViewportVisible(visible: Boolean) {
         _showDiagnosticViewport.value = visible
+    }
+
+    fun setGameStageVisible(visible: Boolean) {
+        _showGameStage.value = visible
+    }
+
+    fun handleVirtualKeyPress(keyCode: Int, isDown: Boolean) {
+        val label = HardwareAndControllerMonitor.formatKeyLabel(keyCode, controllerProfile.value.layoutPreset)
+        _liveGamepadState.update { state ->
+            val updated = if (isDown) state.pressedKeyCodes + keyCode else state.pressedKeyCodes - keyCode
+            state.copy(
+                pressedKeyCodes = updated,
+                lastKeyCode = if (isDown) keyCode else state.lastKeyCode,
+                lastKeyLabel = if (isDown) label else state.lastKeyLabel,
+                lastDeviceName = "Virtual Gamepad Overlay"
+            )
+        }
     }
 
     // --- Game Folder SAF ---
@@ -395,7 +415,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Recompile & Verification Pipeline ---
 
-    fun runRecompilePipeline() {
+    fun runRecompileAndLaunch() {
+        runRecompilePipeline(autoLaunchOnComplete = true)
+    }
+
+    fun runRecompilePipeline(autoLaunchOnComplete: Boolean = false) {
         if (_recompileState.value.isRunning) return
 
         viewModelScope.launch {
@@ -529,10 +553,42 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             _recompileState.update { it.copy(steps = baseSteps.toList(), logLines = logs.toList(), overallProgress = 0.92f) }
             delay(260)
 
-            log("Sintesis selesai! config.ini & dxvk.conf siap diekspor ke folder game PC.")
+            val configIni = gfx.toConfigIniString()
+            val dxvkConf = gfx.toDxvkConfString()
+            val ctrlJson = ctrl.toJsonSummary()
+            val launchBat = gfx.toLaunchBatString()
+
+            val localBundlePath = folderScanner.writeLocalRuntimeBundle(
+                configIniContent = configIni,
+                dxvkConfContent = dxvkConf,
+                controllerJsonContent = ctrlJson,
+                launchScriptContent = launchBat
+            ).getOrNull()
+
+            var syncedFolder = false
+            if (dirStatus is GameDirectoryStatus.Ready) {
+                val syncResult = folderScanner.writeConfigFilesToFolder(
+                    treeUri = dirStatus.treeUriString.toUri(),
+                    configIniContent = configIni,
+                    dxvkConfContent = dxvkConf,
+                    controllerJsonContent = ctrlJson,
+                    launchScriptContent = launchBat
+                )
+                syncedFolder = syncResult.isSuccess
+            }
+
+            if (syncedFolder) {
+                log("Sintesis selesai & tersinkron ke folder game PC (config.ini, dxvk.conf, launch_nsunsr.bat).")
+            } else {
+                log("Sintesis selesai! Bundel runtime siap di perangkat ($localBundlePath).")
+            }
             baseSteps[4] = baseSteps[4].copy(
                 status = RecompileStageStatus.VERIFIED,
-                detail = "Siap ekspor ke folder PC atau peluncuran container"
+                detail = if (syncedFolder) {
+                    "Tersinkron ke folder PC & siap jalankan game"
+                } else {
+                    "Bundel runtime siap • Klik Jalankan Game"
+                }
             )
 
             _recompileState.value = RecompilePipelineState(
@@ -541,9 +597,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 overallProgress = 1f,
                 steps = baseSteps.toList(),
                 logLines = logs.toList(),
-                lastCompletedLabel = "Verifikasi selesai pada ${timeFmt.format(Date())}"
+                lastCompletedLabel = "Verifikasi selesai pada ${timeFmt.format(Date())}",
+                localBundlePath = localBundlePath,
+                syncedToGameFolder = syncedFolder
             )
+
+            if (autoLaunchOnComplete) {
+                launchGameAfterRecompile()
+            }
         }
+    }
+
+    fun launchGameAfterRecompile() {
+        if (!_recompileState.value.hasRunOnce) {
+            runRecompilePipeline(autoLaunchOnComplete = true)
+            return
+        }
+        _showGameStage.value = true
     }
 
     fun exportAllConfigsToGameFolder() {
@@ -557,7 +627,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 treeUri = dir.treeUriString.toUri(),
                 configIniContent = graphicsConfig.value.toConfigIniString(),
                 dxvkConfContent = graphicsConfig.value.toDxvkConfString(),
-                controllerJsonContent = controllerProfile.value.toJsonSummary()
+                controllerJsonContent = controllerProfile.value.toJsonSummary(),
+                launchScriptContent = graphicsConfig.value.toLaunchBatString()
             )
             result.onSuccess { files ->
                 _snackbarMessage.value = "Berhasil menulis ${files.joinToString(", ")} ke '${dir.folderName}'."

@@ -130,7 +130,8 @@ class GameFolderScanner(private val context: Context) {
         treeUri: Uri,
         configIniContent: String,
         dxvkConfContent: String,
-        controllerJsonContent: String
+        controllerJsonContent: String,
+        launchScriptContent: String
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
             val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
@@ -153,7 +154,36 @@ class GameFolderScanner(private val context: Context) {
             )
             written.add("stormrev_controller.json")
 
+            writeOrReplaceChildDocument(
+                treeUri,
+                rootDocId,
+                rootDocUri,
+                "launch_nsunsr.bat",
+                "text/plain",
+                launchScriptContent
+            )
+            written.add("launch_nsunsr.bat")
+
             written
+        }
+    }
+
+    suspend fun writeLocalRuntimeBundle(
+        configIniContent: String,
+        dxvkConfContent: String,
+        controllerJsonContent: String,
+        launchScriptContent: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val runtimeDir = java.io.File(context.getExternalFilesDir("runtime") ?: context.filesDir, "nsunsr_bridge")
+            if (!runtimeDir.exists()) runtimeDir.mkdirs()
+
+            java.io.File(runtimeDir, "config.ini").writeText(configIniContent, Charsets.UTF_8)
+            java.io.File(runtimeDir, "dxvk.conf").writeText(dxvkConfContent, Charsets.UTF_8)
+            java.io.File(runtimeDir, "stormrev_controller.json").writeText(controllerJsonContent, Charsets.UTF_8)
+            java.io.File(runtimeDir, "launch_nsunsr.bat").writeText(launchScriptContent, Charsets.UTF_8)
+
+            runtimeDir.absolutePath
         }
     }
 

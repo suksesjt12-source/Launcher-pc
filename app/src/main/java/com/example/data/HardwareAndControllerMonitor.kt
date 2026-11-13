@@ -56,7 +56,15 @@ class HardwareAndControllerMonitor(private val context: Context) {
             Build.HARDWARE
         }
 
-        val knownRunners = listOf("com.winlator", "com.winlator.cmod", "org.libsdl.app")
+        val knownRunners = listOf(
+            "com.winlator",
+            "com.winlator.cmod",
+            "com.winlator.frost",
+            "com.termux.x11",
+            "com.termux",
+            "org.libsdl.app",
+            "com.xiaoji.egggame"
+        )
         val installedRunner = knownRunners.firstOrNull { pkg ->
             runCatching {
                 @Suppress("DEPRECATION")

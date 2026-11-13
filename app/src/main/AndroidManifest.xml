@@ -11,7 +11,11 @@
     <queries>
         <package android:name="com.winlator" />
         <package android:name="com.winlator.cmod" />
+        <package android:name="com.winlator.frost" />
+        <package android:name="com.termux" />
+        <package android:name="com.termux.x11" />
         <package android:name="org.libsdl.app" />
+        <package android:name="com.xiaoji.egggame" />
     </queries>
 
     <application
