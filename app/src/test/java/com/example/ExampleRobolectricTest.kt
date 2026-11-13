@@ -6,11 +6,14 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.model.AspectRatioMode
 import com.example.model.ControllerLayoutPreset
 import com.example.model.ControllerProfile
+import com.example.model.DeviceHardwareProfile
+import com.example.model.DxWrapperMode
 import com.example.model.FpsTarget
 import com.example.model.GraphicsConfig
 import com.example.model.GraphicsPreset
 import com.example.model.ResolutionScale
 import com.example.model.StormAction
+import com.example.model.WinlatorGraphicsDriver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,5 +69,34 @@ class ExampleRobolectricTest {
         assertTrue(bat.contains("set DXVK_ASYNC=1"))
         assertTrue(bat.contains("set DXVK_FRAME_RATE=60"))
         assertTrue(bat.contains("NSUNSR.exe"))
+    }
+
+    @Test
+    fun `winlator mali profile generates vortek box64 env and container json`() {
+        val hw = DeviceHardwareProfile(
+            deviceModel = "Xiaomi Redmi",
+            socLabel = "MediaTek Dimensity 8300",
+            cpuCores = 8,
+            supportsVulkan = true,
+            gpuVendorLabel = "ARM",
+            gpuRendererLabel = "Mali-G615 MC6",
+            isMediaTekSoc = true,
+            isMaliGpu = true
+        )
+        val config = GraphicsConfig.fromPreset(GraphicsPreset.BALANCED).copy(
+            winlatorDriver = WinlatorGraphicsDriver.VORTEK_MALI,
+            dxWrapper = DxWrapperMode.DXVK_SAREK,
+            box64StrongMem = 1
+        )
+        val env = config.toWinlatorMaliEnvString(hw)
+        val presetJson = config.toWinlatorContainerPresetJson(hw)
+
+        assertTrue(hw.isMediaTekOrMali)
+        assertEquals(WinlatorGraphicsDriver.VORTEK_MALI, hw.recommendedDriver)
+        assertTrue(env.contains("WINLATOR_GRAPHICS_DRIVER=vortek"))
+        assertTrue(env.contains("WINLATOR_DX_WRAPPER=dxvk-sarek"))
+        assertTrue(env.contains("BOX64_DYNAREC_STRONGMEM=1"))
+        assertTrue(presetJson.contains("\"graphicsDriver\": \"vortek\""))
+        assertTrue(presetJson.contains("\"isMediaTekOrMali\": true"))
     }
 }

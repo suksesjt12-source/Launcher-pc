@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
+import android.opengl.GLES20
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -18,6 +19,9 @@ import com.example.model.DeviceHardwareProfile
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import javax.microedition.khronos.egl.EGL10
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.egl.EGLContext
 
 class HardwareAndControllerMonitor(private val context: Context) {
 
@@ -50,11 +54,31 @@ class HardwareAndControllerMonitor(private val context: Context) {
         val defaultDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
         val refreshHz = defaultDisplay?.refreshRate?.toInt() ?: 60
 
-        val socLabel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val socModel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Build.SOC_MODEL.takeIf { it.isNotBlank() && it != "unknown" } ?: Build.HARDWARE
         } else {
             Build.HARDWARE
         }
+        val socManuf = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Build.SOC_MANUFACTURER.orEmpty()
+        } else {
+            ""
+        }
+        val socLabel = if (socManuf.isNotBlank() && socManuf != "unknown" && !socModel.contains(socManuf, ignoreCase = true)) {
+            "$socManuf $socModel"
+        } else {
+            socModel
+        }
+
+        val (gpuVendor, gpuRenderer) = probeGlesGpuInfo()
+        val combinedSoc = "$socManuf $socModel ${Build.HARDWARE} ${Build.BOARD}".lowercase()
+        val isMediaTek = combinedSoc.contains("mediatek") ||
+            combinedSoc.contains("dimensity") ||
+            combinedSoc.contains("helio") ||
+            Regex("\\bmt6\\d{3}").containsMatchIn(combinedSoc)
+        val isMali = gpuRenderer.contains("mali", ignoreCase = true) ||
+            gpuRenderer.contains("immortalis", ignoreCase = true) ||
+            gpuVendor.contains("arm", ignoreCase = true)
 
         val knownRunners = listOf(
             "com.winlator",
@@ -81,9 +105,61 @@ class HardwareAndControllerMonitor(private val context: Context) {
             availableRamMb = memInfo.availMem / (1024L * 1024L),
             supportsVulkan = hasVulkan,
             vulkanVersionLabel = vulkanVersion,
+            gpuVendorLabel = gpuVendor,
+            gpuRendererLabel = gpuRenderer,
+            isMediaTekSoc = isMediaTek,
+            isMaliGpu = isMali,
             displayRefreshHz = refreshHz,
             installedRuntimePackage = installedRunner
         )
+    }
+
+    private fun probeGlesGpuInfo(): Pair<String, String> {
+        return runCatching {
+            val egl = EGLContext.getEGL() as? EGL10 ?: return@runCatching "System" to Build.HARDWARE
+            val display = egl.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY)
+            if (display == EGL10.EGL_NO_DISPLAY) return@runCatching "System" to Build.HARDWARE
+
+            val version = IntArray(2)
+            if (!egl.eglInitialize(display, version)) return@runCatching "System" to Build.HARDWARE
+
+            var surface = EGL10.EGL_NO_SURFACE
+            var contextEgl = EGL10.EGL_NO_CONTEXT
+            try {
+                val configSpec = intArrayOf(
+                    EGL10.EGL_RENDERABLE_TYPE, 4,
+                    EGL10.EGL_SURFACE_TYPE, EGL10.EGL_PBUFFER_BIT,
+                    EGL10.EGL_RED_SIZE, 8,
+                    EGL10.EGL_GREEN_SIZE, 8,
+                    EGL10.EGL_BLUE_SIZE, 8,
+                    EGL10.EGL_NONE
+                )
+                val configs = arrayOfNulls<EGLConfig>(1)
+                val numConfig = IntArray(1)
+                if (!egl.eglChooseConfig(display, configSpec, configs, 1, numConfig) || numConfig[0] <= 0) {
+                    return@runCatching "System" to Build.HARDWARE
+                }
+                val chosenConfig = configs[0] ?: return@runCatching "System" to Build.HARDWARE
+                val ctxAttr = intArrayOf(0x3098, 2, EGL10.EGL_NONE)
+                contextEgl = egl.eglCreateContext(display, chosenConfig, EGL10.EGL_NO_CONTEXT, ctxAttr)
+                val surfAttr = intArrayOf(EGL10.EGL_WIDTH, 1, EGL10.EGL_HEIGHT, 1, EGL10.EGL_NONE)
+                surface = egl.eglCreatePbufferSurface(display, chosenConfig, surfAttr)
+                if (contextEgl == EGL10.EGL_NO_CONTEXT || surface == EGL10.EGL_NO_SURFACE) {
+                    return@runCatching "System" to Build.HARDWARE
+                }
+                if (!egl.eglMakeCurrent(display, surface, surface, contextEgl)) {
+                    return@runCatching "System" to Build.HARDWARE
+                }
+                val vendor = GLES20.glGetString(GLES20.GL_VENDOR)?.takeIf { it.isNotBlank() } ?: "System"
+                val renderer = GLES20.glGetString(GLES20.GL_RENDERER)?.takeIf { it.isNotBlank() } ?: Build.HARDWARE
+                vendor to renderer
+            } finally {
+                egl.eglMakeCurrent(display, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_CONTEXT)
+                if (surface != EGL10.EGL_NO_SURFACE) egl.eglDestroySurface(display, surface)
+                if (contextEgl != EGL10.EGL_NO_CONTEXT) egl.eglDestroyContext(display, contextEgl)
+                egl.eglTerminate(display)
+            }
+        }.getOrElse { "System" to Build.HARDWARE }
     }
 
     fun observeConnectedGamepads(): Flow<List<ConnectedGamepad>> = callbackFlow {

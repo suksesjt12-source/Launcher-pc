@@ -599,24 +599,34 @@ private fun ControllerQuickCard(
 private fun DeviceHardwareCard(hardwareProfile: DeviceHardwareProfile) {
     StormCard(accentColor = ObsidianOutline) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Memory, contentDescription = "Perangkat Keras", tint = RasenganCyan)
-            Text(
-                text = "Telemetri Perangkat Target",
-                style = MaterialTheme.typography.titleLarge,
-                color = TextPrimary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.Memory, contentDescription = "Perangkat Keras", tint = RasenganCyan)
+                Text(
+                    text = "Telemetri Perangkat Target",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary
+                )
+            }
+            if (hardwareProfile.isMediaTekOrMali) {
+                StatusPill(label = "MediaTek/Mali", color = ChakraOrange)
+            }
         }
         Spacer(modifier = Modifier.height(10.dp))
 
         val rows = listOf(
             "Perangkat" to hardwareProfile.deviceModel,
             "SoC / ABI" to "${hardwareProfile.socLabel} (${hardwareProfile.primaryAbi})",
+            "GPU Renderer" to hardwareProfile.gpuRendererLabel,
             "CPU & Layar" to "${hardwareProfile.cpuCores} Core • ${hardwareProfile.displayRefreshHz} Hz",
             "Memori RAM" to "${hardwareProfile.availableRamMb} MB bebas / ${hardwareProfile.totalRamMb} MB total",
-            "API Grafis" to hardwareProfile.vulkanVersionLabel
+            "API & Rekomendasi" to "${hardwareProfile.vulkanVersionLabel} • ${hardwareProfile.recommendedDriver.label}"
         )
         rows.forEach { (k, v) ->
             Row(

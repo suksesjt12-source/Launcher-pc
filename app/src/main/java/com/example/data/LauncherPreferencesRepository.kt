@@ -12,6 +12,7 @@ import com.example.model.AspectRatioMode
 import com.example.model.ControllerLayoutPreset
 import com.example.model.ControllerProfile
 import com.example.model.CpuAffinityMode
+import com.example.model.DxWrapperMode
 import com.example.model.FpsTarget
 import com.example.model.GraphicsConfig
 import com.example.model.GraphicsPreset
@@ -19,6 +20,7 @@ import com.example.model.RenderBackend
 import com.example.model.ResolutionScale
 import com.example.model.ShadowLevel
 import com.example.model.StormAction
+import com.example.model.WinlatorGraphicsDriver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -33,6 +35,8 @@ class LauncherPreferencesRepository(private val context: Context) {
 
         val GFX_PRESET = stringPreferencesKey("gfx_preset")
         val GFX_BACKEND = stringPreferencesKey("gfx_backend")
+        val GFX_WINLATOR_DRIVER = stringPreferencesKey("gfx_winlator_driver")
+        val GFX_DX_WRAPPER = stringPreferencesKey("gfx_dx_wrapper")
         val GFX_RES_SCALE = stringPreferencesKey("gfx_res_scale")
         val GFX_FPS_TARGET = stringPreferencesKey("gfx_fps_target")
         val GFX_ASPECT = stringPreferencesKey("gfx_aspect")
@@ -44,6 +48,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val GFX_ASYNC_SHADER = booleanPreferencesKey("gfx_async_shader")
         val GFX_CPU_AFFINITY = stringPreferencesKey("gfx_cpu_affinity")
         val GFX_TEXTURE_MB = intPreferencesKey("gfx_texture_mb")
+        val GFX_BOX64_STRONGMEM = intPreferencesKey("gfx_box64_strongmem")
 
         val CTRL_LAYOUT = stringPreferencesKey("ctrl_layout")
         val CTRL_DEADZONE = intPreferencesKey("ctrl_deadzone")
@@ -61,6 +66,8 @@ class LauncherPreferencesRepository(private val context: Context) {
         GraphicsConfig(
             preset = enumOrDefault(prefs[Keys.GFX_PRESET], GraphicsPreset.BALANCED),
             renderBackend = enumOrDefault(prefs[Keys.GFX_BACKEND], RenderBackend.VULKAN_DXVK),
+            winlatorDriver = enumOrDefault(prefs[Keys.GFX_WINLATOR_DRIVER], WinlatorGraphicsDriver.VORTEK_MALI),
+            dxWrapper = enumOrDefault(prefs[Keys.GFX_DX_WRAPPER], DxWrapperMode.DXVK_1_10_3),
             resolutionScale = enumOrDefault(prefs[Keys.GFX_RES_SCALE], ResolutionScale.SCALE_075),
             fpsTarget = enumOrDefault(prefs[Keys.GFX_FPS_TARGET], FpsTarget.FPS_60),
             aspectRatio = enumOrDefault(prefs[Keys.GFX_ASPECT], AspectRatioMode.RATIO_16_9),
@@ -71,7 +78,8 @@ class LauncherPreferencesRepository(private val context: Context) {
             celOutlineBoost = prefs[Keys.GFX_CEL_OUTLINE] ?: true,
             asyncShaderCompile = prefs[Keys.GFX_ASYNC_SHADER] ?: true,
             cpuAffinity = enumOrDefault(prefs[Keys.GFX_CPU_AFFINITY], CpuAffinityMode.BIG_CORES),
-            textureMemoryMb = prefs[Keys.GFX_TEXTURE_MB] ?: 1024
+            textureMemoryMb = prefs[Keys.GFX_TEXTURE_MB] ?: 1024,
+            box64StrongMem = prefs[Keys.GFX_BOX64_STRONGMEM] ?: 0
         )
     }
 
@@ -114,6 +122,8 @@ class LauncherPreferencesRepository(private val context: Context) {
         context.launcherDataStore.edit { prefs ->
             prefs[Keys.GFX_PRESET] = config.preset.name
             prefs[Keys.GFX_BACKEND] = config.renderBackend.name
+            prefs[Keys.GFX_WINLATOR_DRIVER] = config.winlatorDriver.name
+            prefs[Keys.GFX_DX_WRAPPER] = config.dxWrapper.name
             prefs[Keys.GFX_RES_SCALE] = config.resolutionScale.name
             prefs[Keys.GFX_FPS_TARGET] = config.fpsTarget.name
             prefs[Keys.GFX_ASPECT] = config.aspectRatio.name
@@ -125,6 +135,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.GFX_ASYNC_SHADER] = config.asyncShaderCompile
             prefs[Keys.GFX_CPU_AFFINITY] = config.cpuAffinity.name
             prefs[Keys.GFX_TEXTURE_MB] = config.textureMemoryMb
+            prefs[Keys.GFX_BOX64_STRONGMEM] = config.box64StrongMem
         }
     }
 

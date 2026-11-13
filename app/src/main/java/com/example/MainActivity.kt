@@ -309,6 +309,8 @@ fun StormRevApp(viewModel: LauncherViewModel) {
                                 hardwareProfile = hardwareProfile,
                                 onApplyPreset = { viewModel.applyGraphicsPreset(it) },
                                 onSetBackend = { viewModel.setRenderBackend(it) },
+                                onSetWinlatorDriver = { viewModel.setWinlatorDriver(it) },
+                                onSetDxWrapper = { viewModel.setDxWrapper(it) },
                                 onSetResolution = { viewModel.setResolutionScale(it) },
                                 onSetFpsTarget = { viewModel.setFpsTarget(it) },
                                 onSetAspectRatio = { viewModel.setAspectRatio(it) },
@@ -320,6 +322,7 @@ fun StormRevApp(viewModel: LauncherViewModel) {
                                 onSetAsyncShader = { viewModel.setAsyncShaderCompile(it) },
                                 onSetCpuAffinity = { viewModel.setCpuAffinity(it) },
                                 onSetTextureMemory = { viewModel.setTextureMemoryMb(it) },
+                                onSetBox64StrongMem = { viewModel.setBox64StrongMem(it) },
                                 onExportIni = { createConfigIniLauncher.launch("config.ini") }
                             )
 

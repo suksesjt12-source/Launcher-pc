@@ -45,12 +45,14 @@ import com.example.R
 import com.example.model.AspectRatioMode
 import com.example.model.CpuAffinityMode
 import com.example.model.DeviceHardwareProfile
+import com.example.model.DxWrapperMode
 import com.example.model.FpsTarget
 import com.example.model.GraphicsConfig
 import com.example.model.GraphicsPreset
 import com.example.model.RenderBackend
 import com.example.model.ResolutionScale
 import com.example.model.ShadowLevel
+import com.example.model.WinlatorGraphicsDriver
 import com.example.ui.components.StatusPill
 import com.example.ui.components.StormCard
 import com.example.ui.components.TelemetryGaugeBar
@@ -76,6 +78,8 @@ fun GraphicsScreen(
     hardwareProfile: DeviceHardwareProfile,
     onApplyPreset: (GraphicsPreset) -> Unit,
     onSetBackend: (RenderBackend) -> Unit,
+    onSetWinlatorDriver: (WinlatorGraphicsDriver) -> Unit,
+    onSetDxWrapper: (DxWrapperMode) -> Unit,
     onSetResolution: (ResolutionScale) -> Unit,
     onSetFpsTarget: (FpsTarget) -> Unit,
     onSetAspectRatio: (AspectRatioMode) -> Unit,
@@ -87,6 +91,7 @@ fun GraphicsScreen(
     onSetAsyncShader: (Boolean) -> Unit,
     onSetCpuAffinity: (CpuAffinityMode) -> Unit,
     onSetTextureMemory: (Int) -> Unit,
+    onSetBox64StrongMem: (Int) -> Unit,
     onExportIni: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -234,12 +239,76 @@ fun GraphicsScreen(
                     }
                     Text(
                         text = if (hardwareProfile.supportsVulkan) {
-                            "Perangkat mendukung ${hardwareProfile.vulkanVersionLabel} secara native."
+                            "Perangkat mendukung ${hardwareProfile.vulkanVersionLabel} (${hardwareProfile.gpuRendererLabel})."
                         } else {
-                            "Vulkan tidak dilaporkan sistem; gunakan OpenGL ES 3.2 jika terjadi crash."
+                            "Vulkan tidak dilaporkan sistem; gunakan OpenGL ES 3.2 / VirGL jika terjadi crash."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (hardwareProfile.supportsVulkan) ShinobiEmerald else ShinobiAmber
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Driver Wrapper Winlator (MediaTek / Mali)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WinlatorGraphicsDriver.entries.forEach { driver ->
+                            FilterChip(
+                                selected = config.winlatorDriver == driver,
+                                onClick = { onSetWinlatorDriver(driver) },
+                                label = { Text(driver.label) },
+                                modifier = Modifier.testTag("driver_chip_${driver.name.lowercase()}"),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = ChakraOrange,
+                                    selectedLabelColor = ObsidianBg,
+                                    containerColor = ObsidianSurfaceVariant,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
+                    Text(
+                        text = config.winlatorDriver.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "DX Wrapper (DirectX 9 -> Vulkan / GL)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DxWrapperMode.entries.forEach { wrapper ->
+                            FilterChip(
+                                selected = config.dxWrapper == wrapper,
+                                onClick = { onSetDxWrapper(wrapper) },
+                                label = { Text(wrapper.label) },
+                                modifier = Modifier.testTag("dxwrapper_chip_${wrapper.name.lowercase()}"),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = RasenganCyan,
+                                    selectedLabelColor = ObsidianBg,
+                                    containerColor = ObsidianSurfaceVariant,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
+                    Text(
+                        text = config.dxWrapper.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -453,6 +522,36 @@ fun GraphicsScreen(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Box64 Dynarec StrongMem (Stabilitas MediaTek)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            0 to "0 (Tercepat)",
+                            1 to "1 (Seimbang)",
+                            2 to "2 (Anti-Crash)"
+                        ).forEach { (level, label) ->
+                            FilterChip(
+                                selected = config.box64StrongMem == level,
+                                onClick = { onSetBox64StrongMem(level) },
+                                label = { Text(label) },
+                                modifier = Modifier.weight(1f),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = RasenganCyan,
+                                    selectedLabelColor = ObsidianBg,
+                                    containerColor = ObsidianSurfaceVariant,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
                 }
 
                 // Live INI & DXVK Preview + Export
@@ -482,7 +581,7 @@ fun GraphicsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "${config.toConfigIniString()}\n${config.toDxvkConfString()}",
+                            text = "${config.toConfigIniString()}\n${config.toDxvkConfString()}\n${config.toWinlatorMaliEnvString(hardwareProfile)}",
                             fontFamily = JetBrainsMonoFamily,
                             style = MaterialTheme.typography.labelSmall,
                             color = RasenganCyan,

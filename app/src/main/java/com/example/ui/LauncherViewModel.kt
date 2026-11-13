@@ -18,6 +18,7 @@ import com.example.model.ControllerLayoutPreset
 import com.example.model.ControllerProfile
 import com.example.model.CpuAffinityMode
 import com.example.model.DeviceHardwareProfile
+import com.example.model.DxWrapperMode
 import com.example.model.FpsTarget
 import com.example.model.GameDirectoryStatus
 import com.example.model.GraphicsConfig
@@ -30,6 +31,10 @@ import com.example.model.RenderBackend
 import com.example.model.ResolutionScale
 import com.example.model.ShadowLevel
 import com.example.model.StormAction
+import com.example.model.WinlatorGraphicsDriver
+import com.example.runtime.ExternalPackageRuntimeBridge
+import com.example.runtime.RuntimeContainerBridge
+import com.example.runtime.RuntimeLaunchResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +54,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val repository = LauncherPreferencesRepository(application)
     private val hardwareMonitor = HardwareAndControllerMonitor(application)
     private val folderScanner = GameFolderScanner(application)
+    private val runtimeBridge: RuntimeContainerBridge = ExternalPackageRuntimeBridge(application)
 
     private val _selectedTab = MutableStateFlow(LauncherTab.HOME)
     val selectedTab: StateFlow<LauncherTab> = _selectedTab.asStateFlow()
@@ -175,12 +181,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val base = GraphicsConfig.fromPreset(preset)
             val current = graphicsConfig.value
+            val hw = _hardwareProfile.value
             val updated = if (preset == GraphicsPreset.CUSTOM) {
                 current.copy(preset = GraphicsPreset.CUSTOM)
             } else {
                 base.copy(
                     aspectRatio = current.aspectRatio,
-                    renderBackend = if (!_hardwareProfile.value.supportsVulkan) {
+                    winlatorDriver = hw.recommendedDriver,
+                    renderBackend = if (!hw.supportsVulkan) {
                         RenderBackend.OPENGL_ES_WINED3D
                     } else {
                         base.renderBackend
@@ -199,6 +207,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setRenderBackend(backend: RenderBackend) = updateGraphics { it.copy(renderBackend = backend) }
+    fun setWinlatorDriver(driver: WinlatorGraphicsDriver) = updateGraphics { it.copy(winlatorDriver = driver) }
+    fun setDxWrapper(wrapper: DxWrapperMode) = updateGraphics { it.copy(dxWrapper = wrapper) }
     fun setResolutionScale(scale: ResolutionScale) = updateGraphics { it.copy(resolutionScale = scale) }
     fun setFpsTarget(fps: FpsTarget) = updateGraphics { it.copy(fpsTarget = fps) }
     fun setAspectRatio(ratio: AspectRatioMode) = updateGraphics { it.copy(aspectRatio = ratio) }
@@ -210,6 +220,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setAsyncShaderCompile(enabled: Boolean) = updateGraphics { it.copy(asyncShaderCompile = enabled) }
     fun setCpuAffinity(mode: CpuAffinityMode) = updateGraphics { it.copy(cpuAffinity = mode) }
     fun setTextureMemoryMb(mb: Int) = updateGraphics { it.copy(textureMemoryMb = mb) }
+    fun setBox64StrongMem(level: Int) = updateGraphics { it.copy(box64StrongMem = level.coerceIn(0, 2)) }
 
     // --- External Controller & Remapping ---
 
@@ -533,12 +544,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val dxvkConf = gfx.toDxvkConfString()
             val ctrlJson = ctrl.toJsonSummary()
             val launchBat = gfx.toLaunchBatString()
+            val winlatorEnv = gfx.toWinlatorMaliEnvString(hw)
+            val containerJson = gfx.toWinlatorContainerPresetJson(hw)
 
             val localBundlePath = folderScanner.writeLocalRuntimeBundle(
                 configIniContent = configIni,
                 dxvkConfContent = dxvkConf,
                 controllerJsonContent = ctrlJson,
-                launchScriptContent = launchBat
+                launchScriptContent = launchBat,
+                winlatorMaliEnvContent = winlatorEnv,
+                winlatorContainerJsonContent = containerJson
             ).getOrNull()
 
             var syncedFolder = false
@@ -548,22 +563,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     configIniContent = configIni,
                     dxvkConfContent = dxvkConf,
                     controllerJsonContent = ctrlJson,
-                    launchScriptContent = launchBat
+                    launchScriptContent = launchBat,
+                    winlatorMaliEnvContent = winlatorEnv,
+                    winlatorContainerJsonContent = containerJson
                 )
                 syncedFolder = syncResult.isSuccess
             }
 
             if (syncedFolder) {
-                log("Sintesis selesai & tersinkron ke folder game PC (config.ini, dxvk.conf, launch_nsunsr.bat).")
+                log("Sintesis selesai & tersinkron ke folder game PC (config.ini, dxvk.conf, winlator_mali_profile.env, launch_nsunsr.bat).")
             } else {
                 log("Sintesis selesai! Bundel runtime siap di perangkat ($localBundlePath).")
             }
             baseSteps[4] = baseSteps[4].copy(
                 status = RecompileStageStatus.VERIFIED,
                 detail = if (syncedFolder) {
-                    "Tersinkron ke folder PC & siap jalankan game"
+                    "Tersinkron ke folder PC (termasuk profil MediaTek/Mali)"
                 } else {
-                    "Bundel runtime siap • Klik Jalankan Game"
+                    "Bundel konfigurasi & profil Winlator siap di perangkat"
                 }
             )
 
@@ -587,12 +604,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             return
         }
         viewModelScope.launch {
+            val hw = _hardwareProfile.value
+            val gfx = graphicsConfig.value
             val result = folderScanner.writeConfigFilesToFolder(
                 treeUri = dir.treeUriString.toUri(),
-                configIniContent = graphicsConfig.value.toConfigIniString(),
-                dxvkConfContent = graphicsConfig.value.toDxvkConfString(),
+                configIniContent = gfx.toConfigIniString(),
+                dxvkConfContent = gfx.toDxvkConfString(),
                 controllerJsonContent = controllerProfile.value.toJsonSummary(),
-                launchScriptContent = graphicsConfig.value.toLaunchBatString()
+                launchScriptContent = gfx.toLaunchBatString(),
+                winlatorMaliEnvContent = gfx.toWinlatorMaliEnvString(hw),
+                winlatorContainerJsonContent = gfx.toWinlatorContainerPresetJson(hw)
             )
             result.onSuccess { files ->
                 _snackbarMessage.value = "Berhasil menulis ${files.joinToString(", ")} ke '${dir.folderName}'."
@@ -615,15 +636,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun launchExternalContainer(): Boolean {
-        val pkg = _hardwareProfile.value.installedRuntimePackage
-        if (pkg == null) {
-            _snackbarMessage.value = "Container Windows/Wine (mis. Winlator) belum terpasang di perangkat."
-            return false
+        val dirReady = _gameDirectoryStatus.value as? GameDirectoryStatus.Ready
+        return when (
+            val result = runtimeBridge.launchContainerWithPreset(
+                graphicsConfig = graphicsConfig.value,
+                controllerProfile = controllerProfile.value,
+                hardware = _hardwareProfile.value,
+                gameDir = dirReady
+            )
+        ) {
+            is RuntimeLaunchResult.Launched -> {
+                _snackbarMessage.value = "Membuka container runtime: ${result.targetLabel}"
+                true
+            }
+            is RuntimeLaunchResult.NotAvailable -> {
+                _snackbarMessage.value = result.reason
+                false
+            }
         }
-        val app = getApplication<Application>()
-        val launchIntent = app.packageManager.getLaunchIntentForPackage(pkg) ?: return false
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        app.startActivity(launchIntent)
-        return true
     }
 }

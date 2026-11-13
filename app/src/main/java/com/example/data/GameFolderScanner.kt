@@ -131,7 +131,9 @@ class GameFolderScanner(private val context: Context) {
         configIniContent: String,
         dxvkConfContent: String,
         controllerJsonContent: String,
-        launchScriptContent: String
+        launchScriptContent: String,
+        winlatorMaliEnvContent: String = "",
+        winlatorContainerJsonContent: String = ""
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
             val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
@@ -164,6 +166,30 @@ class GameFolderScanner(private val context: Context) {
             )
             written.add("launch_nsunsr.bat")
 
+            if (winlatorMaliEnvContent.isNotBlank()) {
+                writeOrReplaceChildDocument(
+                    treeUri,
+                    rootDocId,
+                    rootDocUri,
+                    "winlator_mali_profile.env",
+                    "text/plain",
+                    winlatorMaliEnvContent
+                )
+                written.add("winlator_mali_profile.env")
+            }
+
+            if (winlatorContainerJsonContent.isNotBlank()) {
+                writeOrReplaceChildDocument(
+                    treeUri,
+                    rootDocId,
+                    rootDocUri,
+                    "winlator_container_preset.json",
+                    "application/json",
+                    winlatorContainerJsonContent
+                )
+                written.add("winlator_container_preset.json")
+            }
+
             written
         }
     }
@@ -172,7 +198,9 @@ class GameFolderScanner(private val context: Context) {
         configIniContent: String,
         dxvkConfContent: String,
         controllerJsonContent: String,
-        launchScriptContent: String
+        launchScriptContent: String,
+        winlatorMaliEnvContent: String = "",
+        winlatorContainerJsonContent: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val runtimeDir = java.io.File(context.getExternalFilesDir("runtime") ?: context.filesDir, "nsunsr_bridge")
@@ -182,6 +210,12 @@ class GameFolderScanner(private val context: Context) {
             java.io.File(runtimeDir, "dxvk.conf").writeText(dxvkConfContent, Charsets.UTF_8)
             java.io.File(runtimeDir, "stormrev_controller.json").writeText(controllerJsonContent, Charsets.UTF_8)
             java.io.File(runtimeDir, "launch_nsunsr.bat").writeText(launchScriptContent, Charsets.UTF_8)
+            if (winlatorMaliEnvContent.isNotBlank()) {
+                java.io.File(runtimeDir, "winlator_mali_profile.env").writeText(winlatorMaliEnvContent, Charsets.UTF_8)
+            }
+            if (winlatorContainerJsonContent.isNotBlank()) {
+                java.io.File(runtimeDir, "winlator_container_preset.json").writeText(winlatorContainerJsonContent, Charsets.UTF_8)
+            }
 
             runtimeDir.absolutePath
         }

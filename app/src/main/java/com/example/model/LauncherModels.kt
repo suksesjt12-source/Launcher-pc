@@ -21,6 +21,18 @@ enum class RenderBackend(val label: String, val detail: String) {
     OPENGL_ES_WINED3D("OpenGL ES 3.2", "Kompatibilitas fallback untuk GPU lawas")
 }
 
+enum class WinlatorGraphicsDriver(val id: String, val label: String, val detail: String) {
+    VORTEK_MALI("vortek", "Vortek (Mali Vulkan)", "Wrapper Vulkan ICD optimal untuk GPU ARM Mali / Immortalis"),
+    VIRGL_GLES("virgl", "VirGL (Mali GLES)", "Fallback OpenGL ES stabil bila Vulkan Mali bermasalah"),
+    TURNIP_ADRENO("turnip", "Turnip (Adreno)", "Driver Mesa khusus GPU Qualcomm Adreno")
+}
+
+enum class DxWrapperMode(val id: String, val label: String, val detail: String) {
+    DXVK_1_10_3("dxvk-1.10.3", "DXVK 1.10.3", "Paling stabil untuk DirectX 9 di Mali & Adreno"),
+    DXVK_SAREK("dxvk-sarek", "DXVK-Sarek", "Khusus GPU Mali dengan ekstensi Vulkan terbatas"),
+    WINED3D("wined3d", "WineD3D (OpenGL)", "Fallback kompatibilitas tanpa DXVK")
+}
+
 enum class ResolutionScale(val factor: Float, val width: Int, val height: Int, val label: String) {
     SCALE_050(0.50f, 960, 540, "0.5x (540p)"),
     SCALE_075(0.75f, 1280, 720, "0.75x (720p HD)"),
@@ -57,6 +69,8 @@ enum class CpuAffinityMode(val label: String, val maskDescription: String) {
 data class GraphicsConfig(
     val preset: GraphicsPreset = GraphicsPreset.BALANCED,
     val renderBackend: RenderBackend = RenderBackend.VULKAN_DXVK,
+    val winlatorDriver: WinlatorGraphicsDriver = WinlatorGraphicsDriver.VORTEK_MALI,
+    val dxWrapper: DxWrapperMode = DxWrapperMode.DXVK_1_10_3,
     val resolutionScale: ResolutionScale = ResolutionScale.SCALE_075,
     val fpsTarget: FpsTarget = FpsTarget.FPS_60,
     val aspectRatio: AspectRatioMode = AspectRatioMode.RATIO_16_9,
@@ -67,7 +81,8 @@ data class GraphicsConfig(
     val celOutlineBoost: Boolean = true,
     val asyncShaderCompile: Boolean = true,
     val cpuAffinity: CpuAffinityMode = CpuAffinityMode.BIG_CORES,
-    val textureMemoryMb: Int = 1024
+    val textureMemoryMb: Int = 1024,
+    val box64StrongMem: Int = 0
 ) {
     fun estimatedGpuLoadPercent(): Int {
         var load = when (resolutionScale) {
@@ -83,7 +98,7 @@ data class GraphicsConfig(
         if (fxaaEnabled) load += 5
         if (glareEnabled) load += 4
         load += shadowLevel.iniValue * 4
-        if (renderBackend == RenderBackend.OPENGL_ES_WINED3D) load += 10
+        if (renderBackend == RenderBackend.OPENGL_ES_WINED3D || dxWrapper == DxWrapperMode.WINED3D) load += 10
         return load.coerceIn(15, 100)
     }
 
@@ -95,13 +110,15 @@ data class GraphicsConfig(
         return (base + resAdd + shadowAdd + ssaoAdd).coerceAtMost(textureMemoryMb + 256)
     }
 
+    fun scaledResolutionWidth(): Int = when (aspectRatio) {
+        AspectRatioMode.RATIO_20_9 -> (resolutionScale.height * 20) / 9
+        AspectRatioMode.RATIO_16_10 -> (resolutionScale.height * 16) / 10
+        AspectRatioMode.RATIO_4_3 -> (resolutionScale.height * 4) / 3
+        AspectRatioMode.RATIO_16_9 -> resolutionScale.width
+    }
+
     fun toConfigIniString(): String {
-        val scaledWidth = when (aspectRatio) {
-            AspectRatioMode.RATIO_20_9 -> (resolutionScale.height * 20) / 9
-            AspectRatioMode.RATIO_16_10 -> (resolutionScale.height * 16) / 10
-            AspectRatioMode.RATIO_4_3 -> (resolutionScale.height * 4) / 3
-            AspectRatioMode.RATIO_16_9 -> resolutionScale.width
-        }
+        val scaledWidth = scaledResolutionWidth()
         val fpsIni = if (fpsTarget == FpsTarget.FPS_30) 0 else 1
         return buildString {
             appendLine("; Dihasilkan oleh StormRev Launcher untuk Naruto Shippuden: UNS Revolution")
@@ -126,24 +143,84 @@ data class GraphicsConfig(
     fun toDxvkConfString(): String {
         val maxFps = if (fpsTarget == FpsTarget.UNCAPPED) 0 else fpsTarget.fps
         return buildString {
-            appendLine("# StormRev Translation Profile (${renderBackend.label})")
+            appendLine("# StormRev Translation Profile (${renderBackend.label} / ${dxWrapper.label})")
             appendLine("dxvk.enableAsync = ${if (asyncShaderCompile) "True" else "False"}")
             appendLine("dxvk.numCompilerThreads = ${if (cpuAffinity == CpuAffinityMode.ALL_CORES) 4 else 2}")
             appendLine("dxgi.maxFrameRate = $maxFps")
             appendLine("d3d9.maxFrameRate = $maxFps")
             appendLine("d3d9.maxAvailableMemory = $textureMemoryMb")
             appendLine("d3d9.samplerAnisotropy = ${if (celOutlineBoost) 4 else 1}")
+            if (winlatorDriver == WinlatorGraphicsDriver.VORTEK_MALI) {
+                appendLine("# Optimasi ekstensi Vulkan terbatas ARM Mali")
+                appendLine("d3d9.floatEmulation = Auto")
+            }
         }
+    }
+
+    fun toWinlatorMaliEnvString(hardware: DeviceHardwareProfile): String {
+        val maxFps = if (fpsTarget == FpsTarget.UNCAPPED) 0 else fpsTarget.fps
+        val cpuMaskList = when {
+            cpuAffinity == CpuAffinityMode.ALL_CORES -> (0 until hardware.cpuCores).joinToString(",")
+            hardware.cpuCores >= 8 -> "4,5,6,7"
+            hardware.cpuCores >= 6 -> "2,3,4,5"
+            else -> (0 until hardware.cpuCores).joinToString(",")
+        }
+        return buildString {
+            appendLine("# Profil Environment Winlator / Box64 untuk MediaTek & ARM Mali")
+            appendLine("# GPU Terdeteksi: ${hardware.gpuRendererLabel} (${hardware.gpuVendorLabel})")
+            appendLine("WINLATOR_GRAPHICS_DRIVER=${winlatorDriver.id}")
+            appendLine("WINLATOR_DX_WRAPPER=${dxWrapper.id}")
+            appendLine("WINLATOR_SCREEN_SIZE=${scaledResolutionWidth()}x${resolutionScale.height}")
+            appendLine("WINLATOR_CPU_LIST=$cpuMaskList")
+            appendLine("BOX64_DYNAREC_SAFEFLAGS=1")
+            appendLine("BOX64_DYNAREC_FASTNAN=1")
+            appendLine("BOX64_DYNAREC_FASTROUND=1")
+            appendLine("BOX64_DYNAREC_X87DOUBLE=0")
+            appendLine("BOX64_DYNAREC_BIGBLOCK=2")
+            appendLine("BOX64_DYNAREC_STRONGMEM=${box64StrongMem.coerceIn(0, 2)}")
+            appendLine("BOX64_DYNAREC_FORWARD=128")
+            appendLine("DXVK_ASYNC=${if (asyncShaderCompile) "1" else "0"}")
+            appendLine("DXVK_FRAME_RATE=$maxFps")
+            appendLine("DXVK_STATE_CACHE=1")
+            appendLine("WINEESYNC=1")
+            appendLine("WINEFSYNC=1")
+            if (winlatorDriver == WinlatorGraphicsDriver.VIRGL_GLES || dxWrapper == DxWrapperMode.WINED3D) {
+                appendLine("MESA_GL_VERSION_OVERRIDE=4.3")
+                appendLine("MESA_GLSL_VERSION_OVERRIDE=430")
+            }
+        }
+    }
+
+    fun toWinlatorContainerPresetJson(hardware: DeviceHardwareProfile): String = buildString {
+        appendLine("{")
+        appendLine("  \"name\": \"StormRevolution_MediaTek_Mali\",")
+        appendLine("  \"screenSize\": \"${scaledResolutionWidth()}x${resolutionScale.height}\",")
+        appendLine("  \"graphicsDriver\": \"${winlatorDriver.id}\",")
+        appendLine("  \"dxwrapper\": \"${dxWrapper.id}\",")
+        appendLine("  \"audioDriver\": \"pulseaudio\",")
+        appendLine("  \"box64Preset\": \"PERFORMANCE\",")
+        appendLine("  \"box64StrongMem\": ${box64StrongMem.coerceIn(0, 2)},")
+        appendLine("  \"videoMemorySize\": \"$textureMemoryMb\",")
+        appendLine("  \"detectedSoc\": \"${hardware.socLabel}\",")
+        appendLine("  \"detectedGpu\": \"${hardware.gpuRendererLabel}\",")
+        appendLine("  \"isMediaTekOrMali\": ${hardware.isMediaTekOrMali}")
+        appendLine("}")
     }
 
     fun toLaunchBatString(): String {
         val maxFps = if (fpsTarget == FpsTarget.UNCAPPED) 0 else fpsTarget.fps
         return buildString {
             appendLine("@echo off")
-            appendLine("title Naruto Shippuden: UNS Revolution - StormRev Bridge")
+            appendLine("title Naruto Shippuden: UNS Revolution - StormRev Bridge (${winlatorDriver.id})")
             appendLine("set DXVK_CONFIG_FILE=dxvk.conf")
             appendLine("set DXVK_ASYNC=${if (asyncShaderCompile) "1" else "0"}")
             appendLine("set DXVK_FRAME_RATE=$maxFps")
+            appendLine("set BOX64_DYNAREC_SAFEFLAGS=1")
+            appendLine("set BOX64_DYNAREC_FASTNAN=1")
+            appendLine("set BOX64_DYNAREC_FASTROUND=1")
+            appendLine("set BOX64_DYNAREC_X87DOUBLE=0")
+            appendLine("set BOX64_DYNAREC_BIGBLOCK=2")
+            appendLine("set BOX64_DYNAREC_STRONGMEM=${box64StrongMem.coerceIn(0, 2)}")
             appendLine("set WINEESYNC=1")
             appendLine("set WINEFSYNC=1")
             appendLine("start \"\" \"NSUNSR.exe\"")
@@ -155,6 +232,8 @@ data class GraphicsConfig(
             GraphicsPreset.POWER_SAVER -> GraphicsConfig(
                 preset = GraphicsPreset.POWER_SAVER,
                 renderBackend = RenderBackend.VULKAN_DXVK,
+                winlatorDriver = WinlatorGraphicsDriver.VORTEK_MALI,
+                dxWrapper = DxWrapperMode.DXVK_SAREK,
                 resolutionScale = ResolutionScale.SCALE_050,
                 fpsTarget = FpsTarget.FPS_30,
                 fxaaEnabled = false,
@@ -164,11 +243,14 @@ data class GraphicsConfig(
                 celOutlineBoost = true,
                 asyncShaderCompile = true,
                 cpuAffinity = CpuAffinityMode.BIG_CORES,
-                textureMemoryMb = 512
+                textureMemoryMb = 512,
+                box64StrongMem = 0
             )
             GraphicsPreset.BALANCED -> GraphicsConfig(
                 preset = GraphicsPreset.BALANCED,
                 renderBackend = RenderBackend.VULKAN_DXVK,
+                winlatorDriver = WinlatorGraphicsDriver.VORTEK_MALI,
+                dxWrapper = DxWrapperMode.DXVK_1_10_3,
                 resolutionScale = ResolutionScale.SCALE_075,
                 fpsTarget = FpsTarget.FPS_60,
                 fxaaEnabled = true,
@@ -178,11 +260,14 @@ data class GraphicsConfig(
                 celOutlineBoost = true,
                 asyncShaderCompile = true,
                 cpuAffinity = CpuAffinityMode.BIG_CORES,
-                textureMemoryMb = 1024
+                textureMemoryMb = 1024,
+                box64StrongMem = 0
             )
             GraphicsPreset.MAX_PERFORMANCE -> GraphicsConfig(
                 preset = GraphicsPreset.MAX_PERFORMANCE,
                 renderBackend = RenderBackend.VULKAN_DXVK,
+                winlatorDriver = WinlatorGraphicsDriver.VORTEK_MALI,
+                dxWrapper = DxWrapperMode.DXVK_1_10_3,
                 resolutionScale = ResolutionScale.SCALE_100,
                 fpsTarget = FpsTarget.FPS_60,
                 fxaaEnabled = true,
@@ -192,7 +277,8 @@ data class GraphicsConfig(
                 celOutlineBoost = true,
                 asyncShaderCompile = true,
                 cpuAffinity = CpuAffinityMode.ALL_CORES,
-                textureMemoryMb = 2048
+                textureMemoryMb = 2048,
+                box64StrongMem = 0
             )
             GraphicsPreset.CUSTOM -> GraphicsConfig(preset = GraphicsPreset.CUSTOM)
         }
@@ -284,9 +370,21 @@ data class DeviceHardwareProfile(
     val availableRamMb: Long = 0L,
     val supportsVulkan: Boolean = false,
     val vulkanVersionLabel: String = "Tidak terdeteksi",
+    val gpuVendorLabel: String = "Tidak terdeteksi",
+    val gpuRendererLabel: String = "Tidak terdeteksi",
+    val isMediaTekSoc: Boolean = false,
+    val isMaliGpu: Boolean = false,
     val displayRefreshHz: Int = 60,
     val installedRuntimePackage: String? = null
-)
+) {
+    val isMediaTekOrMali: Boolean get() = isMediaTekSoc || isMaliGpu
+    val recommendedDriver: WinlatorGraphicsDriver
+        get() = when {
+            gpuRendererLabel.contains("Adreno", ignoreCase = true) -> WinlatorGraphicsDriver.TURNIP_ADRENO
+            supportsVulkan -> WinlatorGraphicsDriver.VORTEK_MALI
+            else -> WinlatorGraphicsDriver.VIRGL_GLES
+        }
+}
 
 enum class GameFileCategory {
     EXECUTABLE,
