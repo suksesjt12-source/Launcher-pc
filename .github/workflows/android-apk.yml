@@ -3,24 +3,20 @@ name: Build StormRev Launcher APK
 on:
   push:
     branches:
-      - main
-      - master
+      - '**'
     tags:
       - 'v*'
   pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
     inputs:
       run_tests:
-        description: 'Jalankan unit & Robolectric test sebelum build APK'
+        description: 'Jalankan unit & Robolectric test'
         required: false
         default: true
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-apk:
@@ -37,8 +33,18 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK (API 36.1)
+        uses: android-actions/setup-android@v4
+        with:
+          packages: |
+            platform-tools
+            build-tools;36.0.0
+            platforms;android-36
+            platforms;android-36.1
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
@@ -48,18 +54,29 @@ jobs:
       - name: Prepare debug keystore and env config
         run: |
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            base64 -d debug.keystore.base64 > debug.keystore || rm -f debug.keystore
+          fi
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
           if [ ! -f .env ] && [ -f .env.example ]; then
             cp .env.example .env
           fi
 
-      - name: Run Unit & Robolectric Tests
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
-        run: gradle :app:testDebugUnitTest --no-daemon
-
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        run: |
+          gradle :app:assembleDebug \
+            --no-daemon \
+            --max-workers=2 \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -91,7 +108,10 @@ jobs:
         run: |
           echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "${{ github.workspace }}/my-upload-key.jks"
           export KEYSTORE_PATH="${{ github.workspace }}/my-upload-key.jks"
-          gradle :app:assembleRelease --no-daemon
+          gradle :app:assembleRelease \
+            --no-daemon \
+            --max-workers=2 \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload Release APK Artifact
         if: steps.check_release_secrets.outputs.enabled == 'true'
@@ -102,11 +122,40 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Run Unit & Robolectric Tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+        run: |
+          gradle :app:testDebugUnitTest \
+            --no-daemon \
+            --max-workers=2 \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-apk
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: StormRev-Launcher-debug-apk
+          path: release-assets/debug
+
+      - name: Download Release APK (if built)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: StormRev-Launcher-release-apk
+          path: release-assets/release
+
       - name: Publish GitHub Release on Tag
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+            release-assets/debug/*.apk
+            release-assets/release/*.apk
           fail_on_unmatched_files: false

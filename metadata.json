@@ -2,5 +2,7 @@
   "name": "StormRev Launcher",
   "description": "Launcher recompile PC ke Android khusus Naruto Shippuden: Ultimate Ninja Storm Revolution dengan dukungan pengontrol eksternal dan pengaturan performa grafis yang dapat disesuaikan.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
